@@ -1,0 +1,223 @@
+"smartforms kullanmak için se11 data type ten bir stracture tablo oluşturduk adı ZFA_S_SAS içine ekko ve ekkpo dan
+"gelen alanları yazdık
+" hazır bir tablodan alanlardaki veriler görünmesi için stracture tablo oluşturuz
+" böylece hazır tablodan veya tablolardan (2hazır tablo=1stracture tablo) istedimiz alanları alırız ve verileri içinede dolmuş olur
+" ve bu alanları select komutu ile çekeriz ve gt_outtab adında glubal tablonunun içine atarız (gt_outtab TYPE TABLE OF zfa_s_sas)
+"smartforms çıktısında bazı alanlar boş gelebilir örnegin alv de tarih kısmı boş ve SMARTFORM KISMINDA &GS_OUTTAB-ERDAT& OLSA BİLE
+"ÇIKTI'DA BOŞ GELİR (Belgenin yaratılma tarihi - EKKO-ERDAT )
+
+" eğer öğrnin gs_outtab-menege formda referans alanı tanımlı değil hatası verir ise forma gidep
+"genel tanımlar>genel veriler ve bp/miktar kısmına cod yazarız
+
+REPORT zfa_sas_ciktisi.
+
+TABLES : ekko,
+         ekpo.
+
+DATA : gt_outtab TYPE TABLE OF zfa_s_sas,
+       gs_outtab TYPE zfa_s_sas,
+       gt_fact   TYPE slis_t_fieldcat_alv,
+       gs_layout TYPE slis_layout_alv.
+
+
+DATA: lv_fmname TYPE rs38l_fnam,
+      lv_fname TYPE tdsfname.
+lv_fname = 'ZFA_SAS_SMARTFORM'.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+SELECT-OPTIONS : s_ebeln FOR ekko-ebeln NO-EXTENSION,
+                 s_bedat FOR ekko-bedat NO-EXTENSION.
+SELECTION-SCREEN END OF BLOCK b1.
+
+
+TYPES : BEGIN OF gty_list,   "sel kullanacaksak bunu kullanmak zorundayız
+          sel TYPE xfeld.
+        INCLUDE TYPE zfa_s_sas.
+TYPES : END OF gty_list.
+
+DATA : gt_list TYPE TABLE OF gty_list,
+       gs_list TYPE zfa_s_sas.
+
+START-OF-SELECTION.
+  SELECT ko~ebeln      "alv için ekko ve ekpo tablolarından alanları çektik
+         po~ebelp
+         po~menge
+         po~meins
+         po~netwr
+         ko~waers
+         ko~bedat
+         ko~ernam
+         ko~aedat
+         po~txz01
+      FROM ekko AS ko INNER JOIN ekpo AS po
+    ON ko~ebeln EQ po~ebeln
+    INTO CORRESPONDING FIELDS OF TABLE gt_outtab
+    WHERE ko~ebeln IN s_ebeln
+      AND ko~bedat IN s_bedat
+      AND ko~loekz EQ space
+      AND po~loekz EQ space.
+
+  LOOP AT gt_outtab ASSIGNING FIELD-SYMBOL(<fs_outtab>).      " gt_list isminde boş alanlar oluşturduk ve içine ..
+    APPEND INITIAL LINE TO gt_list ASSIGNING FIELD-SYMBOL(<fs_list>). " gt_outtab taki alanları doldurduk alv de görünsün diye
+    <fs_list>-ebeln = <fs_outtab>-ebeln.
+    <fs_list>-ebelp = <fs_outtab>-ebelp.
+    <fs_list>-menge = <fs_outtab>-menge.
+    <fs_list>-meins = <fs_outtab>-meins.
+    <fs_list>-netwr = <fs_outtab>-netwr.
+    <fs_list>-waers = <fs_outtab>-waers.
+    <fs_list>-bedat = <fs_outtab>-bedat.
+    <fs_list>-ernam = <fs_outtab>-ernam.
+    <fs_list>-aedat = <fs_outtab>-aedat.
+    <fs_list>-txz01 = <fs_outtab>-txz01.
+  ENDLOOP.
+
+
+  CALL FUNCTION 'REUSE_ALV_FIELDCATALOG_MERGE'
+    EXPORTING
+      i_structure_name       = 'ZFA_S_SAS'
+    CHANGING
+      ct_fieldcat            = gt_fact
+    EXCEPTIONS
+      inconsistent_interface = 1
+      program_error          = 2
+      OTHERS                 = 3.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+
+  gs_layout-zebra = abap_true.
+  gs_layout-box_fieldname = 'SEL'.
+  gs_layout-colwidth_optimize = abap_true.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      i_callback_pf_status_set = 'SET_PF_STATUS'
+      i_callback_user_command  = 'SET_USER_COMMAND'
+      is_layout                = gs_layout
+      it_fieldcat              = gt_fact
+    TABLES
+      t_outtab                 = gt_list
+*   EXCEPTIONS
+*     PROGRAM_ERROR            = 1
+*     OTHERS                   = 2
+    .
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+**************************************************************************************************
+
+
+FORM set_pf_status USING rt_extab TYPE slis_t_extab.
+  SET PF-STATUS 'STANDARD'.
+ENDFORM.
+
+FORM set_user_command USING r_ucomm TYPE sy-ucomm
+        rs_selfield  TYPE slis_selfield.
+  CASE 'PRINT'.
+      PERFORM get_smartform USING rs_selfield-tabindex.
+  ENDCASE.
+ENDFORM.
+
+FORM get_smartform USING rs_selfield-tabindex.
+
+  FREE gt_outtab.
+
+" gt_list üste (gt_list TYPE TABLE OF gty_list)
+
+" gt_outtab  isminde boş alanlar oluşturduk ve içine ..
+" gt_list taki alanları doldurduk sel kullanmak için yazdık
+  LOOP AT gt_list ASSIGNING FIELD-SYMBOL(<fs_list>) WHERE sel EQ 'X'.
+    APPEND INITIAL LINE TO gt_outtab ASSIGNING FIELD-SYMBOL(<fs_outtab>).
+    <fs_outtab>-ebeln = <fs_list>-ebeln.
+    <fs_outtab>-ebelp = <fs_list>-ebelp.
+    <fs_outtab>-menge = <fs_list>-menge.
+    <fs_outtab>-meins = <fs_list>-meins.
+    <fs_outtab>-netwr = <fs_list>-netwr.
+    <fs_outtab>-waers = <fs_list>-waers.
+  ENDLOOP.
+
+************************************************************************************
+
+  DATA : gt_detail   TYPE TABLE OF zfa_s_sas,
+         gt_detail_l TYPE TABLE OF zfa_s_sas.
+
+  SELECT ebeln
+         ebelp
+         menge
+         meins
+         netwr
+   FROM ekpo
+   INTO CORRESPONDING FIELDS OF TABLE gt_detail
+   FOR ALL ENTRIES IN gt_outtab
+   WHERE ebeln EQ gt_outtab-ebeln.
+
+" gt_detail_l  isminde boş alanlar oluşturduk ve içine ..
+" gt_detail taki alanları doldurduk
+  LOOP AT gt_detail ASSIGNING FIELD-SYMBOL(<fs_detail>).
+    APPEND INITIAL LINE TO gt_detail_l ASSIGNING FIELD-SYMBOL(<fs_list2>).
+    <fs_list2>-ebeln = <fs_detail>-ebeln.
+    <fs_list2>-ebelp = <fs_detail>-ebelp.
+    <fs_list2>-menge = <fs_detail>-menge.
+    <fs_list2>-meins = <fs_detail>-meins.
+    <fs_list2>-netwr = <fs_detail>-netwr.
+   READ TABLE gt_list ASSIGNING FIELD-SYMBOL(<fs_list3>)
+                       WITH KEY ebeln = <fs_detail>-ebeln.
+    IF sy-subrc IS INITIAL.
+      <fs_list2>-waers = <fs_list3>-waers.
+      <fs_list2>-bedat = <fs_list3>-bedat.
+      <fs_list2>-ernam = <fs_list3>-ernam.
+      <fs_list2>-aedat = <fs_list3>-aedat.
+      <fs_list2>-txz01 = <fs_list3>-txz01.
+    ENDIF.
+  ENDLOOP.
+
+**********************************************************************
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname = lv_fname
+*     VARIANT  = ' '
+*     DIRECT_CALL              = ' '
+    IMPORTING
+      fm_name  = lv_fmname
+* EXCEPTIONS
+*     NO_FORM  = 1
+*     NO_FUNCTION_MODULE       = 2
+*     OTHERS   = 3
+    .
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  CALL FUNCTION lv_fmname  " '/1BCDWB/SF0...... bu fonksiyonu her zaman çağramk zorundayiz ,kopyalamak olmaz
+* EXPORTING
+*   ARCHIVE_INDEX              =
+*   ARCHIVE_INDEX_TAB          =
+*   ARCHIVE_PARAMETERS         =
+*   CONTROL_PARAMETERS         =
+*   MAIL_APPL_OBJ              =
+*   MAIL_RECIPIENT             =
+*   MAIL_SENDER                =
+*   OUTPUT_OPTIONS             =
+*   USER_SETTINGS              = 'X'
+* IMPORTING
+*   DOCUMENT_OUTPUT_INFO       =
+*   JOB_OUTPUT_INFO            =
+*   JOB_OUTPUT_OPTIONS         =
+    TABLES
+      gt_outtab = gt_detail_l
+* EXCEPTIONS
+*     FORMATTING_ERROR           = 1
+*     INTERNAL_ERROR             = 2
+*     SEND_ERROR                 = 3
+*     USER_CANCELED              = 4
+*     OTHERS    = 5
+    .
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
